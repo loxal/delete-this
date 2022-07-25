@@ -1,70 +1,41 @@
-//! Default Compute@Edge template program.
+import * as base64 from "@borderless/base64";
+import utf8 from "utf8";
 
-/// <reference types="@fastly/js-compute" />
-import welcomePage from "./welcome-to-compute@edge.html";
-
-// The entry point for your application.
-//
-// Use this fetch event listener to define your main request handling logic. It could be
-// used to route based on the request properties (such as method or path), send
-// the request to a backend, make completely new requests, and/or generate
-// synthetic responses.
-
-addEventListener("fetch", (event) => event.respondWith(handleRequest(event)));
-
-async function handleRequest(event) {
-  // Get the client request.
-  let req = event.request;
-
-  // Filter requests that have unexpected methods.
-  if (!["HEAD", "GET"].includes(req.method)) {
-    return new Response("This method is not allowed", {
-      status: 405,
-    });
+function handler(event) {
+  const url = new URL(event.request.url);
+  if(url.pathname.startsWith("/base64/")) {
+    if(event.request.method === "GET") {
+      try {
+        const rx = /base64\/([^\/]*)/;
+        const [, encodedSegment] = url.pathname.match(rx);
+        const base64Decoded = base64.decode(encodedSegment);
+        const asString = String.fromCodePoint(...base64Decoded);
+        const utf8Decoded = utf8.decode(asString);
+        const uriEncoded = encodeURIComponent(encodedSegment);
+        return new Response(utf8Decoded, {
+          headers: new Headers({ 
+            "set-cookie": `encodedSegment=${uriEncoded}; Max-Age=3600`
+          }),
+        });
+      } catch (err) {
+        return new Response(JSON.stringify({ error: err.message }), {
+          headers: new Headers({ 
+            "Content-Type": "application/json"
+          }),
+          status: 500
+        });
+      }
+    } else {
+      return new Response("Method Not Allowed", {
+        status: 405
+      });
+    }
+  } else if (url.pathname.startsWith("/status/")) {
+    return fetch(req, { backend: "origin_0" });
   }
-
-  let url = new URL(req.url);
-
-  // If request is to the `/` path...
-  if (url.pathname == "/") {
-    // Below are some common patterns for Compute@Edge services using JavaScript.
-    // Head to https://developer.fastly.com/learning/compute/javascript/ to discover more.
-
-    // Create a new request.
-    // let bereq = new Request("http://example.com");
-
-    // Add request headers.
-    // req.headers.set("X-Custom-Header", "Welcome to Compute@Edge!");
-    // req.headers.set(
-    //   "X-Another-Custom-Header",
-    //   "Recommended reading: https://developer.fastly.com/learning/compute"
-    // );
-
-    // Create a cache override.
-    // let cacheOverride = new CacheOverride("override", { ttl: 60 });
-
-    // Forward the request to a backend.
-    // let beresp = await fetch(req, {
-    //   backend: "backend_name",
-    //   cacheOverride,
-    // });
-
-    // Remove response headers.
-    // beresp.headers.delete("X-Another-Custom-Header");
-
-    // Log to a Fastly endpoint.
-    // const logger = fastly.getLogger("my_endpoint");
-    // logger.log("Hello from the edge!");
-
-    // Send a default synthetic response.
-    return new Response(welcomePage, {
-      status: 200,
-      headers: new Headers({ "Content-Type": "text/html; charset=utf-8" }),
-    });
-  }
-
-  // Catch all other requests and return a 404.
-  return new Response("The page you requested could not be found", {
-    status: 404,
+  return new Response("Not Found", {
+    status: 404
   });
 }
+
+addEventListener("fetch", (event) => event.respondWith(handler(event)));
